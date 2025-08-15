@@ -1,0 +1,17 @@
+# Ignore Python bytecode cache
+__pycache__/
+
+# Ignore environment files
+.env
+
+# Ignore virtual environment folder
+myenv/
+
+*.log
+
+# Ignore venv folder
+venv/
+
+# Ignore node_modules folder
+node_modules/
+

@@ -1,0 +1,9 @@
+fastapi==0.116.1
+uvicorn[standard]==0.32.0
+python-dotenv==1.0.1
+python-multipart==0.0.12
+pydantic==2.11.7
+pydantic[email]==2.11.7
+starlette==0.47.2
+motor==3.6.0
+pymongo==4.10.1
