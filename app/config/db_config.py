@@ -63,7 +63,7 @@ class DatabaseManager:
     
     def get_database(self):
         """Get the database instance"""
-        if not self.database:
+        if self.database is None:
             raise RuntimeError("Database not connected. Call connect_db() first.")
         return self.database
     

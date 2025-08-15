@@ -1,1 +1,1 @@
-# Controller package initialization
+# Controller package

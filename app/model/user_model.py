@@ -1,7 +1,7 @@
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 from datetime import datetime
-from config.db_config import get_database
+from config.db_config import db_manager
 
 # User Pydantic model - similar to your existing models
 class User(BaseModel):
@@ -24,7 +24,7 @@ def get_user_model():
     """Get UserModel collection with lazy initialization"""
     global _db, _user_model
     if _user_model is None:
-        _db = get_database()
+        _db = db_manager.get_database()
         _user_model = _db["users"]
     return _user_model
 
