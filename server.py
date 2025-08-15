@@ -9,13 +9,12 @@ import logging
 import sys
 from pathlib import Path
 
-# Add the app directory to the Python path
-sys.path.append(str(Path(__file__).parent / "app"))
 
-from config.env_config import env_config
-from config.db_config import connect_db, disconnect_db
-from model.user_model import create_user_indexes
-from route.user_routes import router as user_router
+
+from app.config.env_config import env_config
+from app.config.db_config import connect_db, disconnect_db  
+from app.model.user_model import create_user_indexes
+from app.route.user_routes import router as user_router
 
 # Configure logging
 logging.basicConfig(

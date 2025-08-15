@@ -3,8 +3,8 @@ from typing import Dict, Any
 from fastapi import HTTPException
 from pymongo.errors import DuplicateKeyError
 
-from model.user_model import User, UserModel
-from utils.password_utils import hash_password
+from app.model.user_model import User, UserModel
+from app.utils.password_utils import hash_password
 
 class UserController:
     """User controller for handling user-related operations"""

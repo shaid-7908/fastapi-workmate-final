@@ -1,7 +1,7 @@
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 from datetime import datetime
-from config.db_config import db_manager
+from app.config.db_config import db_manager
 
 # User Pydantic model - similar to your existing models
 class User(BaseModel):

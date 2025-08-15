@@ -3,7 +3,7 @@ from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 from datetime import datetime
 
-from controller.user_controller import user_controller
+from app.controller.user_controller import user_controller
 
 # Create router
 router = APIRouter()
