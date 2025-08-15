@@ -14,6 +14,8 @@ sys.path.append(str(Path(__file__).parent / "app"))
 
 from config.env_config import env_config
 from config.db_config import connect_db, disconnect_db
+from model.user_model import create_user_indexes
+from route.user_routes import router as user_router
 
 # Configure logging
 logging.basicConfig(
@@ -42,6 +44,11 @@ async def lifespan(app: FastAPI):
     logger.info("Connecting to database...")
     await connect_db()
     logger.info("Database connection established successfully")
+    
+    # Create database indexes
+    logger.info("Creating database indexes...")
+    await create_user_indexes()
+    logger.info("Database indexes created successfully")
     
     logger.info("Application startup complete")
     
@@ -148,14 +155,13 @@ async def root():
     }
 
 
-# API routes will be added here
-# Example structure for future routes:
+# Include API routes
+app.include_router(user_router, prefix="/api/v1/users", tags=["Users"])
+
+# Future routes can be added here:
 # from route.auth_routes import auth_router
-# from route.user_routes import user_router
 # from route.project_routes import project_router
-# 
 # app.include_router(auth_router, prefix="/api/v1/auth", tags=["Authentication"])
-# app.include_router(user_router, prefix="/api/v1/users", tags=["Users"])
 # app.include_router(project_router, prefix="/api/v1/projects", tags=["Projects"])
 
 
