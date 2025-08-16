@@ -22,6 +22,7 @@ class EnvConfig:
     AWS_SECRET_KEY: str
     AWS_REGION: str
     AWS_BUCKET :str
+    INTERROGATE_API_URL: str
 
 env_config = EnvConfig(
     PORT=os.getenv("PORT", ""),
@@ -40,6 +41,7 @@ env_config = EnvConfig(
     AWS_SECRET_KEY=os.getenv("AWS_SECRET_KEY", ""),
     AWS_REGION=os.getenv("AWS_REGION", ""),
     AWS_BUCKET=os.getenv("AWS_BUCKET", ""),
+    INTERROGATE_API_URL=os.getenv("INTERROGATE_API_URL", "http://127.0.0.1:7860/sdapi/v1/interrogate"),
 )
 
 

@@ -2,7 +2,10 @@ from pydantic import BaseModel, Field, validator
 from typing import Optional, List
 from datetime import datetime
 from enum import Enum
+import boto3
+from botocore.exceptions import ClientError
 from app.config.db_config import db_manager
+from app.config.env_config import env_config
 
 # Enum for image status
 class ImageStatus(str, Enum):
@@ -107,6 +110,43 @@ class UploadModelProxy:
 
 UploadModel = UploadModelProxy()
 
+# Utility function to generate signed URLs
+def generate_signed_url(file_path: str, expiration: int = 3600) -> str:
+    """
+    Generate a signed URL for an S3 object
+    
+    Args:
+        file_path: The S3 object key (file path)
+        expiration: Time in seconds for the URL to remain valid (default: 1 hour)
+    
+    Returns:
+        Signed URL as string
+    """
+    try:
+        s3_client = boto3.client(
+            's3',
+            aws_access_key_id=env_config.AWS_ACCESS_KEY,
+            aws_secret_access_key=env_config.AWS_SECRET_KEY,
+            region_name=env_config.AWS_REGION
+        )
+        
+        # Generate the presigned URL
+        signed_url = s3_client.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': env_config.AWS_BUCKET, 'Key': file_path},
+            ExpiresIn=expiration
+        )
+        
+        return signed_url
+    except ClientError as e:
+        print(f"Error generating signed URL for {file_path}: {e}")
+        # Return the original URL if signing fails
+        return f"https://{env_config.AWS_BUCKET}.s3.{env_config.AWS_REGION}.amazonaws.com/{file_path}"
+    except Exception as e:
+        print(f"Unexpected error generating signed URL for {file_path}: {e}")
+        # Return the original URL if signing fails
+        return f"https://{env_config.AWS_BUCKET}.s3.{env_config.AWS_REGION}.amazonaws.com/{file_path}"
+
 # Index creation function
 async def create_upload_indexes():
     """Create all necessary indexes for uploads collection"""
@@ -134,18 +174,61 @@ async def create_upload_indexes():
 
 # Utility functions for common operations
 async def get_user_uploads(user_id: str, status: Optional[ImageStatus] = None, 
-                          image_type: Optional[ImageType] = None, limit: int = 50, skip: int = 0):
+                          image_type: Optional[ImageType] = None, limit: int = 50, skip: int = 0, 
+                          url_expiration: int = 3600):
     """Get uploads for a specific user with optional filtering"""
-    query = {"userId": user_id, "deletedAt": None}
-    
+    match_stage = {
+        "userId": user_id,
+        "deletedAt": None
+    }
+
     if status:
-        query["status"] = status
+        match_stage["status"] = status
     if image_type:
-        query["imageType"] = image_type
+        match_stage["imageType"] = image_type
+
+    # Aggregation pipeline
+    pipeline = [
+        {"$match": match_stage},                     # filter
+        {"$sort": {"uploadedAt": -1}},              # sort by upload time desc
+        {"$skip": skip},                            # skip N docs
+        {"$limit": limit},
+        {"$project": {
+            "userId": 1,
+            "originalName": 1,
+            "fileName": 1,
+            "filePath": 1,
+            "fileUrl": 1,
+            "thumbnailPath": 1,
+            "thumbnailUrl": 1,
+            "imageType": 1,
+            "status": 1,
+            "description": 1,
+            "tags": 1,
+            "isPublic": 1,
+            "mimeType": 1,
+            "fileSize": 1,
+            "width": 1,
+            "height": 1,
+            "uploadedAt": 1,
+            "updatedAt": 1
+        }}                           # limit
+    ]
     
     upload_collection = get_upload_model()
-    cursor = upload_collection.find(query).sort("uploadedAt", -1).skip(skip).limit(limit)
-    return await cursor.to_list(length=limit)
+    cursor = upload_collection.aggregate(pipeline)
+    uploads = await cursor.to_list(length=limit)
+    
+    # Generate signed URLs for each upload
+    for upload in uploads:
+        if upload.get('filePath'):
+            upload['fileUrl'] = generate_signed_url(upload['filePath'], url_expiration)
+        
+        # Also generate signed URL for thumbnail if it exists
+        if upload.get('thumbnailPath'):
+            upload['thumbnailUrl'] = generate_signed_url(upload['thumbnailPath'], url_expiration)
+    
+    return uploads
 
 async def get_public_uploads(limit: int = 50, skip: int = 0):
     """Get public uploads"""

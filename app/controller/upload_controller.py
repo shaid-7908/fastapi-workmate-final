@@ -1,6 +1,8 @@
 import os
 import uuid
 import boto3
+import base64
+import httpx
 from datetime import datetime
 from typing import Optional
 from fastapi import HTTPException, UploadFile, status
@@ -55,6 +57,66 @@ class UploadController:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to initialize AWS S3 client: {str(e)}"
             )
+
+    async def _interrogate_image(self, image_data: bytes, interrogate_api_url: Optional[str] = None) -> Optional[str]:
+        """
+        Call the image interrogation API to generate a description using CLIP model
+        
+        Args:
+            image_data: Raw image bytes
+            interrogate_api_url: URL of the interrogation API endpoint
+            
+        Returns:
+            Generated caption/description or None if failed
+        """
+        try:
+            # Use configured URL if not provided
+            print(f"Interrogate API URL: {interrogate_api_url}")
+            if interrogate_api_url is None:
+                interrogate_api_url = env_config.INTERROGATE_API_URL
+                
+            # Convert image data to base64
+            base64_image = base64.b64encode(image_data).decode('utf-8')
+            
+            # Prepare the request payload
+            payload = {
+                "image": f"data:image/png;base64,{base64_image}",
+                "model": "clip"
+            }
+            
+            # Make the API call with timeout
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    interrogate_api_url,
+                    json=payload,
+                    headers={
+                        'accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    }
+                )
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    caption = result.get('caption', '').strip()
+                    if caption:
+                        print(f"Generated image caption: {caption}")
+                        return caption
+                    else:
+                        print("Image interrogation returned empty caption")
+                        return None
+                else:
+                    print(f"Image interrogation API failed with status {response.status_code}: {response.text}")
+                    return None
+                    
+        except httpx.ConnectError:
+            print("Could not connect to image interrogation API - service may be unavailable")
+            return None
+        except httpx.TimeoutException:
+            print("Image interrogation API request timed out")
+            return None
+        except Exception as e:
+            print(f"Error calling image interrogation API: {e}")
+            return None
 
     def _validate_image_file(self, file: UploadFile) -> tuple:
         """Validate uploaded file and return image dimensions"""
@@ -229,12 +291,12 @@ class UploadController:
 
     async def get_user_uploads(self, user_id: str, status: Optional[ImageStatus] = None,
                               image_type: Optional[ImageType] = None, 
-                              limit: int = 50, skip: int = 0) -> dict:
-        """Get uploads for a specific user"""
+                              limit: int = 50, skip: int = 0, url_expiration: int = 3600) -> dict:
+        """Get uploads for a specific user with signed URLs"""
         try:
             from app.model.upload_model import get_user_uploads
             
-            uploads = await get_user_uploads(user_id, status, image_type, limit, skip)
+            uploads = await get_user_uploads(user_id, status, image_type, limit, skip, url_expiration)
             
             # Convert ObjectId to string for JSON serialization
             for upload in uploads:
@@ -315,7 +377,8 @@ class UploadController:
                                                   tags: Optional[list] = None,
                                                   is_public: bool = False,
                                                   model_name: str = 'u2net',
-                                                  apply_edge_smoothing: bool = True) -> dict:
+                                                  apply_edge_smoothing: bool = True,
+                                                  generate_ai_description: bool = True) -> dict:
         """Upload image with automatic background removal to S3 and save metadata to database"""
         
         try:
@@ -397,6 +460,17 @@ class UploadController:
             # Generate S3 URL
             s3_url = f"https://{env_config.AWS_BUCKET}.s3.{env_config.AWS_REGION}.amazonaws.com/{s3_path}"
             
+            # Generate AI description if no description provided and AI generation is enabled
+            ai_generated_description = None
+            if generate_ai_description:
+                try:
+                    ai_generated_description = await self._interrogate_image(processed_image_data,'http://127.0.0.1:7860/sdapi/v1/interrogate')
+                    if ai_generated_description:
+                        description = ai_generated_description
+                        print(f"Using AI-generated description: {description}")
+                except Exception as e:
+                    print(f"Failed to generate AI description: {e}")
+            
             # Prepare metadata for database
             combined_metadata = {
                 'background_removal': processing_metadata,
@@ -407,7 +481,9 @@ class UploadController:
                 },
                 'processing_applied': 'background_removal',
                 'model_used': model_name,
-                'edge_smoothing_applied': apply_edge_smoothing
+                'edge_smoothing_applied': apply_edge_smoothing,
+                'ai_description_generated': ai_generated_description is not None,
+                'ai_description': ai_generated_description if ai_generated_description else None
             }
             
             # Create upload record in database
@@ -423,7 +499,7 @@ class UploadController:
                 height=processed_height,
                 imageType=image_type,
                 status=ImageStatus.PROCESSED,  # Mark as processed since background was removed
-                description=description,
+                description=ai_generated_description,
                 tags=tags or [],
                 isPublic=is_public,
                 metadata=combined_metadata,
@@ -464,7 +540,7 @@ class UploadController:
                     "height": processed_height,
                     "imageType": image_type,
                     "status": ImageStatus.PROCESSED,
-                    "description": description,
+                    "description": ai_generated_description,
                     "tags": tags or [],
                     "isPublic": is_public,
                     "backgroundRemoved": True,

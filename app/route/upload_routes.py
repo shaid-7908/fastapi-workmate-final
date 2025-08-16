@@ -117,7 +117,8 @@ async def upload_image_with_background_removal(
     tags: Optional[str] = Form(None, description="Comma-separated tags"),
     is_public: bool = Form(default=False, description="Make image publicly accessible"),
     model: str = Form(default="u2net", description="Background removal model to use"),
-    edge_smoothing: bool = Form(default=True, description="Apply edge smoothing for better quality")
+    edge_smoothing: bool = Form(default=True, description="Apply edge smoothing for better quality"),
+    generate_ai_description: bool = Form(default=True, description="Generate AI description if no description provided")
 ):
     """
     Upload an image with automatic background removal to AWS S3
@@ -129,8 +130,10 @@ async def upload_image_with_background_removal(
     - **is_public**: Whether the image should be publicly accessible (optional, defaults to false)
     - **model**: Background removal model - u2net, u2netp, silueta, isnet-general-use (optional, defaults to u2net)
     - **edge_smoothing**: Apply edge smoothing for better quality (optional, defaults to true)
+    - **generate_ai_description**: Generate AI description using CLIP model if no description provided (optional, defaults to true)
     
     The image will have its background automatically removed before being stored to S3.
+    If no description is provided and generate_ai_description is true, an AI-generated description will be created.
     Returns the upload details including S3 URL and processing metadata.
     """
     try:
@@ -156,7 +159,8 @@ async def upload_image_with_background_removal(
             tags=tags_list,
             is_public=is_public,
             model_name=model,
-            apply_edge_smoothing=edge_smoothing
+            apply_edge_smoothing=edge_smoothing,
+            generate_ai_description=generate_ai_description
         )
         
         return result
@@ -174,23 +178,25 @@ async def upload_image_with_background_removal(
     "/uploads",
     response_model=UploadsListResponse,
     summary="Get user uploads",
-    description="Get list of uploads for the static user"
+    description="Get list of uploads for the static user with signed URLs"
 )
 async def get_uploads(
     status_filter: Optional[ImageStatus] = None,
     image_type: Optional[ImageType] = None,
     limit: int = 50,
-    skip: int = 0
+    skip: int = 0,
+    url_expiration: int = 3600
 ):
     """
-    Get uploads for the static user
+    Get uploads for the static user with signed URLs
     
     - **status_filter**: Filter by upload status (optional)
     - **image_type**: Filter by image type (optional)
     - **limit**: Maximum number of uploads to return (optional, defaults to 50)
     - **skip**: Number of uploads to skip for pagination (optional, defaults to 0)
+    - **url_expiration**: URL expiration time in seconds (optional, defaults to 3600 - 1 hour)
     
-    Returns list of user uploads with metadata.
+    Returns list of user uploads with signed URLs for secure access.
     """
     try:
         result = await upload_controller.get_user_uploads(
@@ -198,7 +204,8 @@ async def get_uploads(
             status=status_filter,
             image_type=image_type,
             limit=limit,
-            skip=skip
+            skip=skip,
+            url_expiration=url_expiration
         )
         
         return result
@@ -244,15 +251,16 @@ async def delete_upload(upload_id: str):
 @router.get(
     "/upload/{upload_id}",
     summary="Get upload details",
-    description="Get details of a specific upload"
+    description="Get details of a specific upload with signed URL"
 )
-async def get_upload_details(upload_id: str):
+async def get_upload_details(upload_id: str, url_expiration: int = 3600):
     """
-    Get details of a specific upload
+    Get details of a specific upload with signed URL
     
     - **upload_id**: ID of the upload to retrieve
+    - **url_expiration**: URL expiration time in seconds (optional, defaults to 3600 - 1 hour)
     
-    Returns detailed information about the upload.
+    Returns detailed information about the upload with signed URLs for secure access.
     """
     try:
         from bson import ObjectId
@@ -274,6 +282,13 @@ async def get_upload_details(upload_id: str):
         # Convert ObjectId to string
         upload['id'] = str(upload['_id'])
         del upload['_id']
+        
+        # Generate signed URLs
+        from app.model.upload_model import generate_signed_url
+        if upload.get('filePath'):
+            upload['fileUrl'] = generate_signed_url(upload['filePath'], url_expiration)
+        if upload.get('thumbnailPath'):
+            upload['thumbnailUrl'] = generate_signed_url(upload['thumbnailPath'], url_expiration)
         
         return {
             "success": True,
