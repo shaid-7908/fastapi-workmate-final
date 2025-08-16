@@ -14,7 +14,9 @@ from pathlib import Path
 from app.config.env_config import env_config
 from app.config.db_config import connect_db, disconnect_db  
 from app.model.user_model import create_user_indexes
+from app.model.upload_model import create_upload_indexes
 from app.route.user_routes import router as user_router
+from app.route.upload_routes import router as upload_router
 
 # Configure logging
 logging.basicConfig(
@@ -47,6 +49,7 @@ async def lifespan(app: FastAPI):
     # Create database indexes
     logger.info("Creating database indexes...")
     await create_user_indexes()
+    await create_upload_indexes()
     logger.info("Database indexes created successfully")
     
     logger.info("Application startup complete")
@@ -156,6 +159,7 @@ async def root():
 
 # Include API routes
 app.include_router(user_router, prefix="/api/v1/users", tags=["Users"])
+app.include_router(upload_router, prefix="/api/v1/uploads", tags=["Uploads"])
 
 # Future routes can be added here:
 # from route.auth_routes import auth_router
